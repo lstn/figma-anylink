@@ -212,6 +212,7 @@
       border-radius: 4px;
       cursor: pointer;
       transition: background-color 0.2s;
+      white-space: nowrap;
     }
 
     .delete-btn:hover {
@@ -220,6 +221,27 @@
 
     .delete-btn:active {
       background: #a93226;
+    }
+
+    .copy-btn {
+      padding: 4px 8px;
+      font-size: 11px;
+      font-weight: 500;
+      color: white;
+      background: #2ecc71;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: background-color 0.2s;
+      white-space: nowrap;
+    }
+
+    .copy-btn:hover {
+      background: #27ae60;
+    }
+
+    .copy-btn:active {
+      background: #229954;
     }
 
     .delete-link-btn {
@@ -424,11 +446,12 @@
                   <th>Hyperlink Object</th>
                   <th>Link Target</th>
                   <th></th>
+                  <th></th>
                 </tr>
               </thead>
               <tbody>
                 <tr>
-                  <td colspan="6" style="text-align: center; padding: 20px; color: #999;">No links found</td>
+                  <td colspan="7" style="text-align: center; padding: 20px; color: #999;">No links found</td>
                 </tr>
               </tbody>
             </table>
@@ -445,6 +468,7 @@
                 <th>Group</th>
                 <th>Hyperlink Object</th>
                 <th>Link Target</th>
+                <th></th>
                 <th></th>
               </tr>
             </thead>
@@ -471,7 +495,10 @@
                       <a href="${escapeHtml(displayUrl)}" target="_blank" class="link-url" title="${escapeHtml(displayUrl)}">${escapeHtml(displayUrl)}</a>
                     </td>
                     <td>
-                      <button class="delete-btn" data-node-id="${escapeHtml(link.nodeId)}" title="Delete this link">Delete</button>
+                      <button class="copy-btn" data-url="${escapeHtml(displayUrl)}" title="Copy link to clipboard">Copy 🔗</button>
+                    </td>
+                    <td>
+                      <button class="delete-btn" data-node-id="${escapeHtml(link.nodeId)}" title="Delete this link">Delete 🗑️</button>
                     </td>
                   </tr>
                 `;
@@ -496,6 +523,46 @@
             const nodeId = el.getAttribute('data-node-id');
             if (nodeId) {
               parent.postMessage({ pluginMessage: { type: 'select-node', nodeId: nodeId, rightClick: true } }, '*');
+            }
+          });
+        });
+
+        // Add click handlers to copy buttons
+        linksList.querySelectorAll('.copy-btn').forEach(btn => {
+          btn.addEventListener('click', async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const url = btn.getAttribute('data-url');
+            if (url) {
+              try {
+                // Use the Clipboard API if available
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                  await navigator.clipboard.writeText(url);
+                } else {
+                  // Fallback for older browsers
+                  const textArea = document.createElement('textarea');
+                  textArea.value = url;
+                  textArea.style.position = 'fixed';
+                  textArea.style.left = '-999999px';
+                  textArea.style.top = '-999999px';
+                  document.body.appendChild(textArea);
+                  textArea.focus();
+                  textArea.select();
+                  document.execCommand('copy');
+                  document.body.removeChild(textArea);
+                }
+                // Visual feedback
+                const originalText = btn.textContent;
+                btn.textContent = 'Copied!';
+                btn.style.background = '#27ae60';
+                setTimeout(() => {
+                  btn.textContent = originalText;
+                  btn.style.background = '';
+                }, 1000);
+              } catch (err) {
+                console.error('Failed to copy:', err);
+                alert('Failed to copy link to clipboard');
+              }
             }
           });
         });
