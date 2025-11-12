@@ -1,0 +1,14 @@
+{
+  "author": "Lucas Estienne <lucas@limaecho.ca> (https://github.com/lstn)",
+  "name": "anylink",
+  "version": "1.0.0",
+  "description": "A Figma plugin to add hyperlinks to any object",
+  "scripts": {
+    "build": "tsc"
+  },
+  "devDependencies": {
+    "@figma/plugin-typings": "^1.0.0",
+    "typescript": "^5.0.0"
+  }
+}
+

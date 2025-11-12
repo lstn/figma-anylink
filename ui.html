@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AnyLink</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 20px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: transparent;
+    }
+
+    .container {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .message {
+      text-align: center;
+      color: #666;
+      font-size: 14px;
+      padding: 12px;
+    }
+
+    .input-group {
+      display: none;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .input-group.visible {
+      display: flex;
+    }
+
+    label {
+      font-size: 13px;
+      font-weight: 500;
+      color: #333;
+    }
+
+    input[type="text"] {
+      width: 100%;
+      padding: 8px 12px;
+      font-size: 14px;
+      border: 1px solid #e0e0e0;
+      border-radius: 4px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    input[type="text"]:focus {
+      border-color: #18a0fb;
+    }
+
+    button {
+      padding: 10px 20px;
+      font-size: 14px;
+      font-weight: 500;
+      color: white;
+      background: #18a0fb;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: background-color 0.2s;
+    }
+
+    button:hover {
+      background: #1592e6;
+    }
+
+    button:active {
+      background: #0e7bc4;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div id="message" class="message">Please select an element to add a link.</div>
+    <div id="inputGroup" class="input-group">
+      <label for="urlInput">URL</label>
+      <input type="text" id="urlInput" placeholder="https://figma.com" autocomplete="off">
+      <button id="linkBtn">Add Link</button>
+    </div>
+  </div>
+
+  <script>
+    (function() {
+      const messageEl = document.getElementById('message');
+      const inputGroup = document.getElementById('inputGroup');
+      const urlInput = document.getElementById('urlInput');
+      const linkBtn = document.getElementById('linkBtn');
+
+      // Check initial selection
+      parent.postMessage({ pluginMessage: { type: 'validate-object-selection' } }, '*');
+
+      // Handle link button click
+      linkBtn.addEventListener('click', handleLinkClick);
+
+      // Handle Enter key in input
+      urlInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          handleLinkClick();
+        }
+      });
+
+      function handleLinkClick() {
+        const url = urlInput.value.trim();
+        if (url) {
+          parent.postMessage({ pluginMessage: { type: 'add-link', url: url } }, '*');
+          urlInput.value = '';
+        }
+      }
+
+      // Listen for selection updates from plugin
+      window.onmessage = (event) => {
+        const { type, selection } = event.data.pluginMessage || {};
+        
+        if (type === 'selection-update') {
+          if (selection && selection.length > 0) {
+            messageEl.style.display = 'none';
+            inputGroup.classList.add('visible');
+            urlInput.focus();
+          } else {
+            messageEl.style.display = 'block';
+            inputGroup.classList.remove('visible');
+          }
+        }
+      };
+    })();
+  </script>
+</body>
+</html>
