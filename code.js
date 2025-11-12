@@ -1,7 +1,7 @@
 // This plugin allows adding hyperlinks to any Figma object by creating
 // a hidden text node behind the object with the hyperlink
 
-figma.showUI(__html__, { width: 500, height: 500 });
+figma.showUI(__html__, { width: 700, height: 500 });
 
 // ClientStorage key prefix
 const STORAGE_KEY_PREFIX = 'anylink_links_';
@@ -67,9 +67,41 @@ async function saveLinksToStorage(links) {
   }
 }
 
+// Helper function to get the page from a node id
+function getPageFromNode(node) {
+  let current = node;
+  while (current) {
+    if (current.type === 'PAGE') {
+      return current;
+    }
+    current = current.parent;
+  }
+  return null;
+}
+
 // Add or update a link in storage
 async function saveLinkToStorage(nodeId, nodeName, textNodeId, groupId, url) {
   const links = await loadLinksFromStorage();
+  
+  // Get page info from node if provided, otherwise use current page
+  let pageId = null;
+  let pageName = null;
+
+  const node = await figma.getNodeByIdAsync(nodeId);
+  const page = getPageFromNode(node);
+  
+  if (page) {  
+    pageId = page.id;
+    pageName = page.name;
+  } else {
+    // Fallback to current page
+    const currentPage = figma.currentPage;
+    if (currentPage) {
+      pageId = currentPage.id;
+      pageName = currentPage.name;
+    }
+  }
+  
   links[nodeId] = {
     url: url,
     nodeName: nodeName,
@@ -77,6 +109,8 @@ async function saveLinkToStorage(nodeId, nodeName, textNodeId, groupId, url) {
     groupId: groupId,
     fileId: getFileHash(),
     fileName: figma.root.name,
+    pageId: pageId,
+    pageName: pageName,
     timestamp: Date.now()
   };
   await saveLinksToStorage(links);
@@ -120,16 +154,22 @@ async function deleteLink(nodeId) {
     let textNode = null;
     let originalNode = null;
     
-    // Search for the group
+    // Search for the group, loading pages as needed
     for (const page of figma.root.children) {
       if (page.type === 'PAGE') {
-        if (linkData.groupId) {
-          group = findNodeById(page, linkData.groupId);
+        try {
+          await page.loadAsync();
+          if (linkData.groupId) {
+            group = findNodeById(page, linkData.groupId);
+          }
+          if (linkData.textNodeId) {
+            textNode = findNodeById(page, linkData.textNodeId);
+          }
+          if (group || textNode) break;
+        } catch (e) {
+          // Page might not be accessible, continue to next page
+          continue;
         }
-        if (linkData.textNodeId) {
-          textNode = findNodeById(page, linkData.textNodeId);
-        }
-        if (group || textNode) break;
       }
     }
     
@@ -239,8 +279,33 @@ function getUrlFromTextNode(textNode) {
   return null;
 }
 
-// Scan all nodes recursively to find hyperlinks
-async function scanAllHyperlinks() {
+// Track which pages have been scanned (reset when file changes)
+let scannedPages = new Set();
+let lastFileHash = null;
+
+// Scan a single page for hyperlinks
+async function scanPage(page) {
+  // Reset scanned pages if file hash changed (different file)
+  const currentFileHash = getFileHash();
+  if (lastFileHash !== currentFileHash) {
+    scannedPages.clear();
+    lastFileHash = currentFileHash;
+  }
+  
+  // Skip if already scanned
+  if (scannedPages.has(page.id)) {
+    return;
+  }
+  
+  // Load the page if needed (required for dynamic-page documentAccess)
+  try {
+    await page.loadAsync();
+  } catch (e) {
+    // Page might already be loaded or not accessible
+    console.log('Could not load page:', e.message);
+    return;
+  }
+  
   const links = await loadLinksFromStorage();
   const foundLinks = {};
   
@@ -254,6 +319,11 @@ async function scanAllHyperlinks() {
         const groupId = existingLink.parent && existingLink.parent.type === 'GROUP' 
           ? existingLink.parent.id 
           : null;
+        // Get page info from the node
+        const page = getPageFromNode(node);
+        const pageId = page ? page.id : null;
+        const pageName = page ? page.name : null;
+        
         foundLinks[node.id] = {
           url: url,
           nodeName: node.name || 'Unnamed',
@@ -261,6 +331,8 @@ async function scanAllHyperlinks() {
           groupId: groupId,
           fileId: getFileHash(),
           fileName: figma.root.name,
+          pageId: pageId,
+          pageName: pageName,
           timestamp: (links[node.id] && links[node.id].timestamp) || Date.now()
         };
       }
@@ -274,18 +346,32 @@ async function scanAllHyperlinks() {
     }
   }
   
-  // Scan all pages
-  for (const page of figma.root.children) {
-    if (page.type === 'PAGE') {
-      for (const child of page.children) {
-        scanNode(child);
-      }
-    }
+  // Scan the page
+  for (const child of page.children) {
+    scanNode(child);
   }
   
+  // Mark page as scanned
+  scannedPages.add(page.id);
+  
   // Update storage with found links (merge with existing timestamps)
-  await saveLinksToStorage(foundLinks);
+  if (Object.keys(foundLinks).length > 0) {
+    const allLinks = await loadLinksFromStorage();
+    Object.assign(allLinks, foundLinks);
+    await saveLinksToStorage(allLinks);
+  }
+  
   return foundLinks;
+}
+
+// Scan all nodes recursively to find hyperlinks (only current page)
+async function scanAllHyperlinks() {
+  // Only scan the current page
+  const currentPage = figma.currentPage;
+  if (currentPage) {
+    await scanPage(currentPage);
+  }
+  await refreshLinksList();
 }
 
 // Refresh and send links list to UI
@@ -303,7 +389,8 @@ async function refreshLinksList() {
       nodeName: linkData.nodeName,
       textNodeId: linkData.textNodeId,
       groupId: linkData.groupId || null,
-      fileName: linkData.fileName || figma.root.name
+      fileName: linkData.fileName || figma.root.name,
+      pageName: linkData.pageName || null
     }));
   
   figma.ui.postMessage({
@@ -314,7 +401,7 @@ async function refreshLinksList() {
 }
 
 // Find and select a node by ID
-async function selectNodeById(nodeId) {
+async function selectNodeById(nodeId, rightClick = false) {
   function findNodeById(node, targetId) {
     if (node.id === targetId) {
       return node;
@@ -332,18 +419,29 @@ async function selectNodeById(nodeId) {
     return null;
   }
   
-  // Search through all pages
+  // Search through all pages, loading each as needed
   for (const page of figma.root.children) {
     if (page.type === 'PAGE') {
-      const node = findNodeById(page, nodeId);
-      if (node) {
-        // Select the node and viewport to it
-        // Use setCurrentPageAsync for dynamic-page documentAccess
-        await figma.setCurrentPageAsync(page);
-        figma.viewport.scrollAndZoomIntoView([node]);
-        figma.currentPage.selection = [node];
-        figma.notify(`Selected: ${node.name || 'object'}`);
-        return;
+      try {
+        await page.loadAsync();
+        const node = findNodeById(page, nodeId);
+        if (node) {
+          // Select the node and viewport to it
+          // Use setCurrentPageAsync for dynamic-page documentAccess
+          await figma.setCurrentPageAsync(page);
+          figma.viewport.scrollAndZoomIntoView([node]);
+          figma.currentPage.selection = [node];
+          
+          if (rightClick) {
+            figma.notify(`Selected: ${node.name || 'object'}. Right-click in Figma to see context menu.`);
+          } else {
+            figma.notify(`Selected: ${node.name || 'object'}`);
+          }
+          return;
+        }
+      } catch (e) {
+        // Page might not be accessible, continue to next page
+        continue;
       }
     }
   }
@@ -351,8 +449,15 @@ async function selectNodeById(nodeId) {
   figma.notify('Object not found. It may have been deleted.');
 }
 
+// Track the last current page to detect page changes
+let lastCurrentPageId = null;
+
 // Initialize: scan file and refresh UI
 async function initialize() {
+  // Initialize last current page ID
+  lastCurrentPageId = figma.currentPage ? figma.currentPage.id : null;
+  
+  // Scan the current page
   await scanAllHyperlinks();
   await refreshLinksList();
   validateSelection();
@@ -366,6 +471,17 @@ figma.on('selectionchange', () => {
   validateSelection();
 });
 
+// Listen for page changes and scan new pages
+figma.on('currentpagechange', async () => {
+  const currentPage = figma.currentPage;
+  if (currentPage && currentPage.id !== lastCurrentPageId) {
+    lastCurrentPageId = currentPage.id;
+    // Scan the new page if not already scanned
+    await scanPage(currentPage);
+    await refreshLinksList();
+  }
+});
+
 // Handle messages from the UI
 figma.ui.onmessage = async (msg) => {
   if (msg.type === 'validate-object-selection') {
@@ -376,7 +492,7 @@ figma.ui.onmessage = async (msg) => {
     await scanAllHyperlinks();
     await refreshLinksList();
   } else if (msg.type === 'select-node') {
-    await selectNodeById(msg.nodeId);
+    await selectNodeById(msg.nodeId, msg.rightClick || false);
   } else if (msg.type === 'delete-link') {
     await deleteLink(msg.nodeId);
   }
@@ -521,6 +637,22 @@ async function addHyperlink(url) {
 
     // Handle Group or Link Object selections - find original nodes to update
     const nodesToUpdate = [];
+    let needsPageLoad = false;
+    
+    // Check if we need to search through pages
+    for (const node of selection) {
+      const originalNodeId = findOriginalNodeId(node, links);
+      if (originalNodeId) {
+        needsPageLoad = true;
+        break;
+      }
+    }
+    
+    // Load pages if needed (required for dynamic-page documentAccess)
+    if (needsPageLoad) {
+      await figma.loadAllPagesAsync();
+    }
+    
     for (const node of selection) {
       const originalNodeId = findOriginalNodeId(node, links);
       if (originalNodeId) {
@@ -695,7 +827,7 @@ async function setTextPropertySafely(textNode, property, value, loadedFont) {
 
 function findExistingHyperlink(node) {
   // Look for a hidden text node sibling that might be the hyperlink
-  // Now that we group nodes, they'll be siblings in the same parent (frame)
+  // When nodes are grouped, they'll be siblings in the same group
   if (node.parent && 'children' in node.parent) {
     const parent = node.parent;
     const nodeIndex = parent.children.indexOf(node);
@@ -708,15 +840,39 @@ function findExistingHyperlink(node) {
         // Check if it's our hidden hyperlink text (font size 12, filled with 'x')
         try {
           const fontSize = sibling.getRangeFontSize(0, 1);
-          if (fontSize === 12) {
-            // When grouped, both nodes are at (0,0) relative to the frame
-            // So we check if they're at the same relative position
-            const posMatch = Math.abs(sibling.x - node.x) < 1 && Math.abs(sibling.y - node.y) < 1;
-            const sizeMatch = 'width' in node && 'height' in node && 
-                              Math.abs(sibling.width - node.width) < 1 && 
-                              Math.abs(sibling.height - node.height) < 1;
-            if (posMatch && sizeMatch && sibling.characters.length > 0 && sibling.characters[0] === 'x') {
-              return sibling;
+          if (fontSize === 12 && sibling.characters.length > 0 && sibling.characters[0] === 'x') {
+            // When grouped, both nodes are siblings in the group
+            // Check if they're in the same group (parent is a GROUP)
+            const isGrouped = parent.type === 'GROUP';
+            
+            if (isGrouped) {
+              // When grouped, both nodes are siblings in the same group
+              // They should have similar dimensions (within 10px tolerance for grouped nodes)
+              // Position matching is less critical when grouped since both are relative to group
+              if ('width' in node && 'height' in node) {
+                const widthDiff = Math.abs(sibling.width - node.width);
+                const heightDiff = Math.abs(sibling.height - node.height);
+                
+                // Allow up to 10px difference in dimensions (more lenient for grouped nodes)
+                // This handles cases where the text node might not be perfectly aligned
+                if (widthDiff < 10 && heightDiff < 10) {
+                  return sibling;
+                }
+              } else {
+                // If node doesn't have width/height, just check if they're in the same group
+                // This handles edge cases where dimensions might not be available
+                return sibling;
+              }
+            } else {
+              // Not grouped - use stricter matching (original logic)
+              const posMatch = Math.abs(sibling.x - node.x) < 1 && Math.abs(sibling.y - node.y) < 1;
+              const sizeMatch = 'width' in node && 'height' in node && 
+                                Math.abs(sibling.width - node.width) < 1 && 
+                                Math.abs(sibling.height - node.height) < 1;
+              
+              if (posMatch && sizeMatch) {
+                return sibling;
+              }
             }
           }
         } catch (e) {

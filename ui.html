@@ -418,6 +418,7 @@
             <table>
               <thead>
                 <tr>
+                  <th>Page Name</th>
                   <th>Object</th>
                   <th>Group</th>
                   <th>Hyperlink Object</th>
@@ -427,7 +428,7 @@
               </thead>
               <tbody>
                 <tr>
-                  <td colspan="5" style="text-align: center; padding: 20px; color: #999;">No links found</td>
+                  <td colspan="6" style="text-align: center; padding: 20px; color: #999;">No links found</td>
                 </tr>
               </tbody>
             </table>
@@ -439,6 +440,7 @@
           <table>
             <thead>
               <tr>
+                <th>Page Name</th>
                 <th>Object</th>
                 <th>Group</th>
                 <th>Hyperlink Object</th>
@@ -452,8 +454,10 @@
                 const displayUrl = link.url || '';
                 const groupId = link.groupId || '';
                 const textNodeId = link.textNodeId || '';
+                const pageName = link.pageName || '-';
                 return `
                   <tr>
+                    <td>${escapeHtml(pageName)}</td>
                     <td>
                       <span class="clickable" data-node-id="${escapeHtml(link.nodeId)}" title="Click to select this object">${escapeHtml(displayName)}</span>
                     </td>
@@ -483,6 +487,15 @@
             const nodeId = el.getAttribute('data-node-id');
             if (nodeId) {
               parent.postMessage({ pluginMessage: { type: 'select-node', nodeId: nodeId } }, '*');
+            }
+          });
+          
+          // Add right-click handler to show context menu
+          el.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            const nodeId = el.getAttribute('data-node-id');
+            if (nodeId) {
+              parent.postMessage({ pluginMessage: { type: 'select-node', nodeId: nodeId, rightClick: true } }, '*');
             }
           });
         });
