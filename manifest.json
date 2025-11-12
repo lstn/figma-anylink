@@ -1,12 +1,17 @@
 {
   "name": "AnyLink",
-  "id": "anylink",
+  "id": "1570501463342361663",
   "api": "1.0.0",
   "main": "code.js",
   "ui": "ui.html",
   "documentAccess": "dynamic-page",
   "editorType": [
-    "figma", "figjam", "dev"
-  ]
+    "figma", "figjam", "dev", "slides", "buzz"
+  ],
+  "networkAccess": {
+    "allowedDomains": [
+      "none"
+    ]
+  }
 }
 
