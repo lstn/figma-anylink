@@ -185,6 +185,10 @@ async function deleteLink(nodeId) {
         if (group.parent) {
           group.remove();
         }
+        
+        // Commit undo checkpoint right after all Figma deletion operations complete
+        // This makes the entire deletion a single undo step
+        figma.commitUndo();
       } catch (e) {
         console.error('Error ungrouping:', e);
         // If ungrouping fails, try to just remove from storage
@@ -198,6 +202,8 @@ async function deleteLink(nodeId) {
               if (group.parent) {
                 group.remove();
               }
+              // Commit undo checkpoint after fallback operations
+              figma.commitUndo();
             }
           }
         } catch (e2) {
@@ -205,9 +211,12 @@ async function deleteLink(nodeId) {
           // Even if ungrouping fails, still remove from storage
         }
       }
+    } else if (textNode) {
+      // If we only have textNode (no group), commit undo after removing it
+      figma.commitUndo();
     }
     
-    // Remove from storage
+    // Remove from storage (this doesn't affect the document, so it's after commitUndo)
     await removeLinkFromStorage(nodeId);
     
     figma.notify(`Removed hyperlink from ${linkData.nodeName || 'object'}`);
@@ -566,19 +575,19 @@ async function addHyperlink(url) {
         const existingLink = findExistingHyperlink(node);
         
         if (existingLink) {
-          // Update existing hyperlink
+          // Update existing hyperlink (commitUndo is called inside updateHyperlink)
           await updateHyperlink(existingLink, hyperlinkUrl);
           // Find the group (parent of both node and textNode)
           const groupId = existingLink.parent && existingLink.parent.type === 'GROUP' 
             ? existingLink.parent.id 
             : null;
-          // Update in storage
+          // Update in storage (this doesn't affect the document)
           await saveLinkToStorage(node.id, node.name || 'Unnamed', existingLink.id, groupId, hyperlinkUrl);
           figma.notify(`Updated hyperlink for ${node.name || 'object'}`);
         } else {
-          // Create new hyperlink
+          // Create new hyperlink (commitUndo is called inside createHyperlink)
           const result = await createHyperlink(node, hyperlinkUrl);
-          // Save to storage
+          // Save to storage (this doesn't affect the document)
           await saveLinkToStorage(node.id, node.name || 'Unnamed', result.textNode.id, result.group.id, hyperlinkUrl);
           figma.notify(`Added hyperlink to ${node.name || 'object'}`);
         }
@@ -904,7 +913,11 @@ async function createHyperlink(node, url) {
     
     // Group both nodes together - figma.group() maintains their absolute positions
     const group = figma.group([node, textNode], originalParent || figma.currentPage, originalIndex);
-    group.name = node.name + ' (with hyperlink)';
+    group.name = 'AnyLink: ' + node.name;
+    
+    // Commit undo checkpoint right after all Figma operations complete
+    // This makes the entire creation a single undo step
+    figma.commitUndo();
     
     // Return both text node and group so we can save their IDs to storage
     return { textNode: textNode, group: group };
@@ -927,5 +940,8 @@ async function updateHyperlink(textNode, url) {
   if (textLength > 0) {
     textNode.setRangeHyperlink(0, textLength, { type: 'URL', value: url });
   }
+  // Commit undo checkpoint right after the update operation
+  // This makes the update a single undo step
+  figma.commitUndo();
 }
 
