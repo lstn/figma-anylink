@@ -1,10 +1,356 @@
 // This plugin allows adding hyperlinks to any Figma object by creating
 // a hidden text node behind the object with the hyperlink
 
-figma.showUI(__html__, { width: 300, height: 200 });
+figma.showUI(__html__, { width: 500, height: 500 });
 
-// Check initial selection
-validateSelection();
+// ClientStorage key prefix
+const STORAGE_KEY_PREFIX = 'anylink_links_';
+
+// Simple hash function for strings
+function hashString(str) {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash; // Convert to 32-bit integer
+  }
+  return Math.abs(hash).toString(36);
+}
+
+// Create a hash identifier for the current file based on figma.root properties
+function getFileHash() {
+  // Combine stable properties of figma.root to create a unique identifier
+  const root = figma.root;
+  const fileKey = figma.fileKey || '';
+  
+  // Create a string from stable root properties
+  const hashInput = [
+    fileKey,
+    root.id,
+    root.name || '',
+    root.type || '',
+    root.children.length.toString()
+  ].join('|');
+  
+  return hashString(hashInput);
+}
+
+// Get file identifier (fileKey or fallback to hash)
+function getFileId() {
+  return figma.fileKey || 'local_' + getFileHash();
+}
+
+// Get storage key for current file
+function getStorageKey() {
+  return STORAGE_KEY_PREFIX + getFileId();
+}
+
+// Load links from clientStorage for current file
+async function loadLinksFromStorage() {
+  try {
+    const storageKey = getStorageKey();
+    const links = await figma.clientStorage.getAsync(storageKey);
+    return links || {};
+  } catch (error) {
+    console.error('Error loading links from storage:', error);
+    return {};
+  }
+}
+
+// Save links to clientStorage for current file
+async function saveLinksToStorage(links) {
+  try {
+    const storageKey = getStorageKey();
+    await figma.clientStorage.setAsync(storageKey, links);
+  } catch (error) {
+    console.error('Error saving links to storage:', error);
+  }
+}
+
+// Add or update a link in storage
+async function saveLinkToStorage(nodeId, nodeName, textNodeId, groupId, url) {
+  const links = await loadLinksFromStorage();
+  links[nodeId] = {
+    url: url,
+    nodeName: nodeName,
+    textNodeId: textNodeId,
+    groupId: groupId,
+    fileId: getFileHash(),
+    fileName: figma.root.name,
+    timestamp: Date.now()
+  };
+  await saveLinksToStorage(links);
+  await refreshLinksList();
+}
+
+// Remove a link from storage
+async function removeLinkFromStorage(nodeId) {
+  const links = await loadLinksFromStorage();
+  delete links[nodeId];
+  await saveLinksToStorage(links);
+  await refreshLinksList();
+}
+
+// Delete a link: remove text node, ungroup, and remove from storage
+async function deleteLink(nodeId) {
+  try {
+    const links = await loadLinksFromStorage();
+    const linkData = links[nodeId];
+    
+    if (!linkData) {
+      figma.notify('Link not found in storage');
+      return;
+    }
+    
+    // Find the group and text node
+    function findNodeById(currentNode, targetId) {
+      if (currentNode.id === targetId) {
+        return currentNode;
+      }
+      if ('children' in currentNode) {
+        for (const child of currentNode.children) {
+          const found = findNodeById(child, targetId);
+          if (found) return found;
+        }
+      }
+      return null;
+    }
+    
+    let group = null;
+    let textNode = null;
+    let originalNode = null;
+    
+    // Search for the group
+    for (const page of figma.root.children) {
+      if (page.type === 'PAGE') {
+        if (linkData.groupId) {
+          group = findNodeById(page, linkData.groupId);
+        }
+        if (linkData.textNodeId) {
+          textNode = findNodeById(page, linkData.textNodeId);
+        }
+        if (group || textNode) break;
+      }
+    }
+    
+    // If we found the group, get the original node from it
+    if (group && 'children' in group) {
+      for (const child of group.children) {
+        if (child.id !== linkData.textNodeId) {
+          originalNode = child;
+          break;
+        }
+      }
+    }
+    
+    // Remove the text node (if it still exists)
+    if (textNode) {
+      try {
+        // Check if node still exists by trying to access its parent
+        if (textNode.parent) {
+          textNode.remove();
+        }
+      } catch (e) {
+        // Node might already be removed, that's okay
+        console.log('Text node already removed or doesn\'t exist:', e.message);
+      }
+    }
+    
+    // Ungroup: move original node to group's parent and remove group
+    if (group && originalNode) {
+      try {
+        // Check if group still exists
+        if (!group.parent) {
+          // Group already removed, just clean up storage
+          await removeLinkFromStorage(nodeId);
+          figma.notify(`Removed hyperlink from ${linkData.nodeName || 'object'}`);
+          return;
+        }
+        
+        const groupParent = group.parent;
+        
+        // Check if original node still exists and is in the group
+        if (originalNode.parent === group) {
+          const groupIndex = groupParent.children.indexOf(group);
+          
+          // Move original node to group's parent
+          if (groupIndex >= 0) {
+            groupParent.insertChild(groupIndex, originalNode);
+          } else {
+            groupParent.appendChild(originalNode);
+          }
+        }
+        
+        // Remove the group (only if it still exists)
+        if (group.parent) {
+          group.remove();
+        }
+      } catch (e) {
+        console.error('Error ungrouping:', e);
+        // If ungrouping fails, try to just remove from storage
+        // The nodes might have been manually deleted
+        try {
+          // Check if group still exists before trying fallback
+          if (group.parent && originalNode && originalNode.parent === group) {
+            const groupParent = group.parent;
+            if (groupParent && 'children' in groupParent) {
+              groupParent.appendChild(originalNode);
+              if (group.parent) {
+                group.remove();
+              }
+            }
+          }
+        } catch (e2) {
+          console.error('Error in fallback ungroup:', e2);
+          // Even if ungrouping fails, still remove from storage
+        }
+      }
+    }
+    
+    // Remove from storage
+    await removeLinkFromStorage(nodeId);
+    
+    figma.notify(`Removed hyperlink from ${linkData.nodeName || 'object'}`);
+  } catch (error) {
+    figma.notify(`Error deleting link: ${error.message}`);
+    console.error('Error in deleteLink:', error);
+  }
+}
+
+// Get URL from text node
+function getUrlFromTextNode(textNode) {
+  try {
+    const hyperlink = textNode.getRangeHyperlink(0, 1);
+    if (hyperlink && hyperlink.type === 'URL') {
+      return hyperlink.value;
+    }
+  } catch (e) {
+    // Couldn't read hyperlink
+  }
+  return null;
+}
+
+// Scan all nodes recursively to find hyperlinks
+async function scanAllHyperlinks() {
+  const links = await loadLinksFromStorage();
+  const foundLinks = {};
+  
+  function scanNode(node) {
+    // Check if this node has a hyperlink
+    const existingLink = findExistingHyperlink(node);
+    if (existingLink) {
+      const url = getUrlFromTextNode(existingLink);
+      if (url) {
+        // Find the group (parent of both node and textNode)
+        const groupId = existingLink.parent && existingLink.parent.type === 'GROUP' 
+          ? existingLink.parent.id 
+          : null;
+        foundLinks[node.id] = {
+          url: url,
+          nodeName: node.name || 'Unnamed',
+          textNodeId: existingLink.id,
+          groupId: groupId,
+          fileId: getFileHash(),
+          fileName: figma.root.name,
+          timestamp: (links[node.id] && links[node.id].timestamp) || Date.now()
+        };
+      }
+    }
+    
+    // Recursively scan children
+    if ('children' in node) {
+      for (const child of node.children) {
+        scanNode(child);
+      }
+    }
+  }
+  
+  // Scan all pages
+  for (const page of figma.root.children) {
+    if (page.type === 'PAGE') {
+      for (const child of page.children) {
+        scanNode(child);
+      }
+    }
+  }
+  
+  // Update storage with found links (merge with existing timestamps)
+  await saveLinksToStorage(foundLinks);
+  return foundLinks;
+}
+
+// Refresh and send links list to UI
+async function refreshLinksList() {
+  const links = await loadLinksFromStorage();
+  const currentFileHash = getFileHash();
+  
+  // Filter links to only show those from the current file
+  // Also filter out legacy links that don't have fileId
+  const linksArray = Object.entries(links)
+    .filter(([nodeId, linkData]) => linkData && linkData.fileId === currentFileHash)
+    .map(([nodeId, linkData]) => ({
+      nodeId: nodeId,
+      url: linkData.url,
+      nodeName: linkData.nodeName,
+      textNodeId: linkData.textNodeId,
+      groupId: linkData.groupId || null,
+      fileName: linkData.fileName || figma.root.name
+    }));
+  
+  figma.ui.postMessage({
+    type: 'links-list-update',
+    links: linksArray,
+    currentFileName: figma.root.name
+  });
+}
+
+// Find and select a node by ID
+async function selectNodeById(nodeId) {
+  function findNodeById(node, targetId) {
+    if (node.id === targetId) {
+      return node;
+    }
+    
+    if ('children' in node) {
+      for (const child of node.children) {
+        const found = findNodeById(child, targetId);
+        if (found) {
+          return found;
+        }
+      }
+    }
+    
+    return null;
+  }
+  
+  // Search through all pages
+  for (const page of figma.root.children) {
+    if (page.type === 'PAGE') {
+      const node = findNodeById(page, nodeId);
+      if (node) {
+        // Select the node and viewport to it
+        // Use setCurrentPageAsync for dynamic-page documentAccess
+        await figma.setCurrentPageAsync(page);
+        figma.viewport.scrollAndZoomIntoView([node]);
+        figma.currentPage.selection = [node];
+        figma.notify(`Selected: ${node.name || 'object'}`);
+        return;
+      }
+    }
+  }
+  
+  figma.notify('Object not found. It may have been deleted.');
+}
+
+// Initialize: scan file and refresh UI
+async function initialize() {
+  await scanAllHyperlinks();
+  await refreshLinksList();
+  validateSelection();
+}
+
+// Check initial selection and initialize
+initialize();
 
 // Listen for selection changes
 figma.on('selectionchange', () => {
@@ -12,29 +358,190 @@ figma.on('selectionchange', () => {
 });
 
 // Handle messages from the UI
-figma.ui.onmessage = (msg) => {
+figma.ui.onmessage = async (msg) => {
   if (msg.type === 'validate-object-selection') {
     validateSelection();
   } else if (msg.type === 'add-link') {
-    addHyperlink(msg.url);
+    await addHyperlink(msg.url);
+  } else if (msg.type === 'refresh-links') {
+    await scanAllHyperlinks();
+    await refreshLinksList();
+  } else if (msg.type === 'select-node') {
+    await selectNodeById(msg.nodeId);
+  } else if (msg.type === 'delete-link') {
+    await deleteLink(msg.nodeId);
   }
 };
 
-function validateSelection() {
+// Find the original node ID when a Group or Link Object is selected
+function findOriginalNodeId(node, links) {
+  // Check if this node is a group that contains our hyperlink text node
+  if (node.type === 'GROUP' && 'children' in node) {
+    // Find the text node and original node in the group
+    let textNode = null;
+    let originalNode = null;
+    
+    for (const child of node.children) {
+      if (child.type === 'TEXT' && child.opacity === 0) {
+        try {
+          const fontSize = child.getRangeFontSize(0, 1);
+          if (fontSize === 12 && child.characters.length > 0 && child.characters[0] === 'x') {
+            textNode = child;
+            break;
+          }
+        } catch (e) {
+          // Continue checking
+        }
+      }
+    }
+    
+    // Find the original node (the one that's not the text node)
+    if (textNode) {
+      for (const child of node.children) {
+        if (child.id !== textNode.id) {
+          originalNode = child;
+          break;
+        }
+      }
+    }
+    
+    if (originalNode) {
+      return originalNode.id;
+    }
+  }
+  
+  // Check if this node is a text node that's part of an AnyLink setup
+  if (node.type === 'TEXT' && node.opacity === 0) {
+    try {
+      const fontSize = node.getRangeFontSize(0, 1);
+      if (fontSize === 12 && node.characters.length > 0 && node.characters[0] === 'x') {
+        // Check if it's in a group (our AnyLink groups contain both the original node and text node)
+        if (node.parent && node.parent.type === 'GROUP') {
+          // Find the original node (the one that's not this text node)
+          for (const sibling of node.parent.children) {
+            if (sibling.id !== node.id) {
+              return sibling.id;
+            }
+          }
+        }
+      }
+    } catch (e) {
+      // Not our text node
+    }
+  }
+  
+  // Check if this node ID matches any groupId or textNodeId in stored links
+  for (const [nodeId, linkData] of Object.entries(links)) {
+    if (linkData.groupId === node.id || linkData.textNodeId === node.id) {
+      return nodeId; // Return the original node ID
+    }
+  }
+  
+  return null;
+}
+
+// Check if a node is a Group or Link Object created by AnyLink
+function isAnyLinkGroupOrTextNode(node, links) {
+  return findOriginalNodeId(node, links) !== null;
+}
+
+async function validateSelection() {
   const selection = figma.currentPage.selection;
+  let links = await loadLinksFromStorage();
+  
+  const selectionInfo = await Promise.all(selection.map(async node => {
+    const existingLink = findExistingHyperlink(node);
+    let existingUrl = null;
+    
+    if (existingLink) {
+      // Try to get the hyperlink URL from the text node
+      existingUrl = getUrlFromTextNode(existingLink);
+      
+      // If link found but not in storage, add it
+      // Check both by node.id and by checking if the file hash matches
+      const currentFileHash = getFileHash();
+      const linkExists = links[node.id] && links[node.id].fileId === currentFileHash;
+      
+      if (existingUrl && !linkExists) {
+        const groupId = existingLink.parent && existingLink.parent.type === 'GROUP' 
+          ? existingLink.parent.id 
+          : null;
+        await saveLinkToStorage(node.id, node.name || 'Unnamed', existingLink.id, groupId, existingUrl);
+        // Reload links after saving to get updated data
+        links = await loadLinksFromStorage();
+        // Explicitly refresh the links list to ensure UI updates
+        await refreshLinksList();
+      }
+    }
+    
+    // Check if this is a Group or Link Object - if so, find the original node
+    const originalNodeId = findOriginalNodeId(node, links);
+    const isGroupOrLinkObject = originalNodeId !== null;
+    
+    // If it's a Group or Link Object, get the URL from the original node's link
+    let groupOrLinkObjectUrl = null;
+    if (isGroupOrLinkObject && originalNodeId && links[originalNodeId]) {
+      groupOrLinkObjectUrl = links[originalNodeId].url;
+    }
+    
+    return {
+      id: node.id,
+      type: node.type,
+      hasHyperlink: existingLink !== null || isGroupOrLinkObject,
+      hyperlinkUrl: existingUrl || groupOrLinkObjectUrl,
+      isGroupOrLinkObject: isGroupOrLinkObject,
+      originalNodeId: originalNodeId
+    };
+  }));
+  
   figma.ui.postMessage({
     type: 'selection-update',
-    selection: selection.map(node => ({ id: node.id, type: node.type }))
+    selection: selectionInfo
   });
 }
 
 async function addHyperlink(url) {
   try {
     const selection = figma.currentPage.selection;
+    const links = await loadLinksFromStorage();
     
     if (selection.length === 0) {
       figma.notify('Please select an object to add a hyperlink');
       return;
+    }
+
+    // Handle Group or Link Object selections - find original nodes to update
+    const nodesToUpdate = [];
+    for (const node of selection) {
+      const originalNodeId = findOriginalNodeId(node, links);
+      if (originalNodeId) {
+        // Find the original node by ID
+        function findNodeById(currentNode, targetId) {
+          if (currentNode.id === targetId) {
+            return currentNode;
+          }
+          if ('children' in currentNode) {
+            for (const child of currentNode.children) {
+              const found = findNodeById(child, targetId);
+              if (found) return found;
+            }
+          }
+          return null;
+        }
+        
+        // Search for the original node
+        for (const page of figma.root.children) {
+          if (page.type === 'PAGE') {
+            const originalNode = findNodeById(page, originalNodeId);
+            if (originalNode) {
+              nodesToUpdate.push(originalNode);
+              break;
+            }
+          }
+        }
+      } else {
+        nodesToUpdate.push(node);
+      }
     }
 
     // Validate and process URL
@@ -53,7 +560,7 @@ async function addHyperlink(url) {
       hyperlinkUrl = 'https://' + hyperlinkUrl;
     }
 
-    for (const node of selection) {
+    for (const node of nodesToUpdate) {
       try {
         // Check if node already has a hyperlink (by checking for hidden text child)
         const existingLink = findExistingHyperlink(node);
@@ -61,10 +568,18 @@ async function addHyperlink(url) {
         if (existingLink) {
           // Update existing hyperlink
           await updateHyperlink(existingLink, hyperlinkUrl);
+          // Find the group (parent of both node and textNode)
+          const groupId = existingLink.parent && existingLink.parent.type === 'GROUP' 
+            ? existingLink.parent.id 
+            : null;
+          // Update in storage
+          await saveLinkToStorage(node.id, node.name || 'Unnamed', existingLink.id, groupId, hyperlinkUrl);
           figma.notify(`Updated hyperlink for ${node.name || 'object'}`);
         } else {
           // Create new hyperlink
-          await createHyperlink(node, hyperlinkUrl);
+          const result = await createHyperlink(node, hyperlinkUrl);
+          // Save to storage
+          await saveLinkToStorage(node.id, node.name || 'Unnamed', result.textNode.id, result.group.id, hyperlinkUrl);
           figma.notify(`Added hyperlink to ${node.name || 'object'}`);
         }
       } catch (error) {
@@ -390,6 +905,9 @@ async function createHyperlink(node, url) {
     // Group both nodes together - figma.group() maintains their absolute positions
     const group = figma.group([node, textNode], originalParent || figma.currentPage, originalIndex);
     group.name = node.name + ' (with hyperlink)';
+    
+    // Return both text node and group so we can save their IDs to storage
+    return { textNode: textNode, group: group };
   } catch (error) {
     // Clean up text node if something went wrong
     if (textNode && textNode.parent) {

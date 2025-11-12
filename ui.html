@@ -78,6 +78,177 @@
     button:active {
       background: #0e7bc4;
     }
+
+    button:disabled {
+      background: #cccccc;
+      color: #666666;
+      cursor: not-allowed;
+      opacity: 0.6;
+    }
+
+    button:disabled:hover {
+      background: #cccccc;
+    }
+
+    button.update-mode {
+      background: #9b7dd4;
+    }
+
+    button.update-mode:hover {
+      background: #8a6bc3;
+    }
+
+    button.update-mode:active {
+      background: #7959b2;
+    }
+
+    .links-section {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-top: 8px;
+    }
+
+    .links-header {
+      font-size: 13px;
+      font-weight: 600;
+      color: #333;
+      margin-bottom: 4px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .refresh-btn {
+      padding: 4px 8px;
+      font-size: 11px;
+      font-weight: 500;
+      color: #666;
+      background: #f0f0f0;
+      border: 1px solid #e0e0e0;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .refresh-btn:hover {
+      background: #e0e0e0;
+      color: #333;
+    }
+
+    .refresh-btn:active {
+      background: #d0d0d0;
+    }
+
+    .links-list {
+      max-height: 300px;
+      overflow-y: auto;
+      border: 1px solid #e0e0e0;
+      border-radius: 4px;
+      background: #fafafa;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+
+    thead {
+      background: #f0f0f0;
+      position: sticky;
+      top: 0;
+      z-index: 1;
+    }
+
+    th {
+      padding: 8px;
+      text-align: left;
+      font-weight: 600;
+      color: #333;
+      border-bottom: 2px solid #e0e0e0;
+      font-size: 11px;
+    }
+
+    td {
+      padding: 8px;
+      border-bottom: 1px solid #e0e0e0;
+      background: white;
+    }
+
+    tbody tr:last-child td {
+      border-bottom: none;
+    }
+
+    .clickable {
+      color: #18a0fb;
+      cursor: pointer;
+      text-decoration: none;
+    }
+
+    .clickable:hover {
+      text-decoration: underline;
+      color: #1592e6;
+    }
+
+    .link-url {
+      color: #18a0fb;
+      word-break: break-all;
+      font-size: 11px;
+      text-decoration: none;
+    }
+
+    .link-url:hover {
+      text-decoration: underline;
+    }
+
+    .delete-btn {
+      padding: 4px 8px;
+      font-size: 11px;
+      font-weight: 500;
+      color: white;
+      background: #e74c3c;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: background-color 0.2s;
+    }
+
+    .delete-btn:hover {
+      background: #c0392b;
+    }
+
+    .delete-btn:active {
+      background: #a93226;
+    }
+
+    .delete-link-btn {
+      padding: 10px 20px;
+      font-size: 14px;
+      font-weight: 500;
+      color: white;
+      background: #e74c3c;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: background-color 0.2s;
+      margin-top: 2px;
+    }
+
+    .delete-link-btn:hover {
+      background: #c0392b;
+    }
+
+    .delete-link-btn:active {
+      background: #a93226;
+    }
+
+    .empty-links {
+      text-align: center;
+      color: #999;
+      font-size: 12px;
+      padding: 12px;
+    }
   </style>
 </head>
 <body>
@@ -87,6 +258,31 @@
       <label for="urlInput">URL</label>
       <input type="text" id="urlInput" placeholder="https://figma.com" autocomplete="off">
       <button id="linkBtn">Add Link</button>
+      <button id="deleteLinkBtn" class="delete-link-btn" style="display: none;">Delete Link</button>
+    </div>
+    <div id="linksSection" class="links-section">
+      <div class="links-header">
+        <span id="linksHeader">Links in this file</span>
+        <button id="refreshBtn" class="refresh-btn" title="Refresh links list">Refresh</button>
+      </div>
+      <div id="linksList" class="links-list">
+        <table>
+          <thead>
+            <tr>
+              <th>Object</th>
+              <th>Group</th>
+              <th>Hyperlink Object</th>
+              <th>Link Target</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td colspan="5" style="text-align: center; padding: 20px; color: #999;">No links found</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </div>
   </div>
 
@@ -94,14 +290,39 @@
     (function() {
       const messageEl = document.getElementById('message');
       const inputGroup = document.getElementById('inputGroup');
+      const linksSection = document.getElementById('linksSection');
+      const linksHeader = document.getElementById('linksHeader');
+      const linksList = document.getElementById('linksList');
+      const refreshBtn = document.getElementById('refreshBtn');
       const urlInput = document.getElementById('urlInput');
       const linkBtn = document.getElementById('linkBtn');
+      const deleteLinkBtn = document.getElementById('deleteLinkBtn');
+      
+      // Track current selected node ID for deletion
+      let currentSelectedNodeId = null;
 
       // Check initial selection
       parent.postMessage({ pluginMessage: { type: 'validate-object-selection' } }, '*');
 
       // Handle link button click
       linkBtn.addEventListener('click', handleLinkClick);
+
+      // Handle refresh button click
+      refreshBtn.addEventListener('click', () => {
+        parent.postMessage({ pluginMessage: { type: 'refresh-links' } }, '*');
+      });
+
+      // Handle delete link button click
+      deleteLinkBtn.addEventListener('click', () => {
+        if (currentSelectedNodeId && confirm('Are you sure you want to delete this link?')) {
+          parent.postMessage({ pluginMessage: { type: 'delete-link', nodeId: currentSelectedNodeId } }, '*');
+        }
+      });
+
+      // Auto-refresh links table every 3 seconds
+      setInterval(() => {
+        parent.postMessage({ pluginMessage: { type: 'refresh-links' } }, '*');
+      }, 3000);
 
       // Handle Enter key in input
       urlInput.addEventListener('keydown', (e) => {
@@ -118,19 +339,151 @@
         }
       }
 
-      // Listen for selection updates from plugin
+      function renderLinksList(links) {
+        if (!links || links.length === 0) {
+          linksList.innerHTML = `
+            <table>
+              <thead>
+                <tr>
+                  <th>Object</th>
+                  <th>Group</th>
+                  <th>Hyperlink Object</th>
+                  <th>Link Target</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td colspan="5" style="text-align: center; padding: 20px; color: #999;">No links found</td>
+                </tr>
+              </tbody>
+            </table>
+          `;
+          return;
+        }
+
+        linksList.innerHTML = `
+          <table>
+            <thead>
+              <tr>
+                <th>Object</th>
+                <th>Group</th>
+                <th>Hyperlink Object</th>
+                <th>Link Target</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              ${links.map(link => {
+                const displayName = link.nodeName || 'Unnamed';
+                const displayUrl = link.url || '';
+                const groupId = link.groupId || '';
+                const textNodeId = link.textNodeId || '';
+                return `
+                  <tr>
+                    <td>
+                      <span class="clickable" data-node-id="${escapeHtml(link.nodeId)}" title="Click to select this object">${escapeHtml(displayName)}</span>
+                    </td>
+                    <td>
+                      ${groupId ? `<span class="clickable" data-node-id="${escapeHtml(groupId)}" title="Click to select the group">Group</span>` : '-'}
+                    </td>
+                    <td>
+                      ${textNodeId ? `<span class="clickable" data-node-id="${escapeHtml(textNodeId)}" title="Click to select the hyperlink text object">Link Object</span>` : '-'}
+                    </td>
+                    <td>
+                      <a href="${escapeHtml(displayUrl)}" target="_blank" class="link-url" title="${escapeHtml(displayUrl)}">${escapeHtml(displayUrl)}</a>
+                    </td>
+                    <td>
+                      <button class="delete-btn" data-node-id="${escapeHtml(link.nodeId)}" title="Delete this link">Delete</button>
+                    </td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        `;
+
+        // Add click handlers to all clickable elements
+        linksList.querySelectorAll('.clickable').forEach(el => {
+          el.addEventListener('click', (e) => {
+            e.preventDefault();
+            const nodeId = el.getAttribute('data-node-id');
+            if (nodeId) {
+              parent.postMessage({ pluginMessage: { type: 'select-node', nodeId: nodeId } }, '*');
+            }
+          });
+        });
+
+        // Add click handlers to delete buttons
+        linksList.querySelectorAll('.delete-btn').forEach(btn => {
+          btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const nodeId = btn.getAttribute('data-node-id');
+            if (nodeId && confirm('Are you sure you want to delete this link?')) {
+              parent.postMessage({ pluginMessage: { type: 'delete-link', nodeId: nodeId } }, '*');
+            }
+          });
+        });
+      }
+
+      function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+      }
+
+      // Listen for messages from plugin
       window.onmessage = (event) => {
-        const { type, selection } = event.data.pluginMessage || {};
+        const { type, selection, links, currentFileName } = event.data.pluginMessage || {};
         
         if (type === 'selection-update') {
           if (selection && selection.length > 0) {
             messageEl.style.display = 'none';
             inputGroup.classList.add('visible');
+            
+            // Check if the selected object has an existing hyperlink or is a Group/Link Object
+            const hasHyperlink = selection[0].hasHyperlink;
+            const isGroupOrLinkObject = selection[0].isGroupOrLinkObject || false;
+            
+            // Store the node ID for deletion (use originalNodeId if it's a Group/Link Object)
+            currentSelectedNodeId = isGroupOrLinkObject && selection[0].originalNodeId 
+              ? selection[0].originalNodeId 
+              : selection[0].id;
+            
+            if (hasHyperlink || isGroupOrLinkObject) {
+              linkBtn.textContent = 'Update Link';
+              linkBtn.classList.add('update-mode');
+              deleteLinkBtn.style.display = 'block';
+              // Pre-fill the URL if we have it
+              if (selection[0].hyperlinkUrl) {
+                urlInput.value = selection[0].hyperlinkUrl;
+              }
+            } else {
+              linkBtn.textContent = 'Add Link';
+              linkBtn.classList.remove('update-mode');
+              deleteLinkBtn.style.display = 'none';
+              urlInput.value = '';
+            }
+            
+            linkBtn.disabled = false;
             urlInput.focus();
           } else {
             messageEl.style.display = 'block';
             inputGroup.classList.remove('visible');
+            linkBtn.disabled = false;
+            linkBtn.classList.remove('update-mode');
+            deleteLinkBtn.style.display = 'none';
+            currentSelectedNodeId = null;
           }
+        } else if (type === 'links-list-update') {
+          // Update header with file name
+          if (currentFileName) {
+            linksHeader.textContent = `Links in "${currentFileName}"`;
+          } else {
+            linksHeader.textContent = 'Links in this file';
+          }
+          renderLinksList(links);
         }
       };
     })();
