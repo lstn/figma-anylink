@@ -162,7 +162,7 @@
     }
 
     th {
-      padding: 8px;
+      padding: 8px 4px 8px 3px;
       text-align: left;
       font-weight: 600;
       color: #333;
@@ -171,7 +171,7 @@
     }
 
     td {
-      padding: 8px;
+      padding: 8px 3px 8px 3px;
       border-bottom: 1px solid #e0e0e0;
       background: white;
     }
@@ -194,7 +194,7 @@
     .link-url {
       color: #18a0fb;
       word-break: break-all;
-      font-size: 11px;
+      font-size: 9px;
       text-decoration: none;
     }
 
@@ -242,6 +242,125 @@
 
     .copy-btn:active {
       background: #229954;
+    }
+
+    .modify-btn {
+      padding: 4px 8px;
+      font-size: 11px;
+      font-weight: 500;
+      color: white;
+      background: #9b7dd4;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: background-color 0.2s;
+      white-space: nowrap;
+    }
+
+    .modify-btn:hover {
+      background: #8a6bc3;
+    }
+
+    .modify-btn:active {
+      background: #7a5bb2;
+    }
+
+    .group-btn, .link-object-btn {
+      padding: 4px 8px;
+      font-size: 11px;
+      font-weight: 500;
+      color: white;
+      background: #555;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: background-color 0.2s;
+      white-space: nowrap;
+    }
+
+    .group-btn:hover, .link-object-btn:hover {
+      background: #444;
+    }
+
+    .group-btn:active, .link-object-btn:active {
+      background: #333;
+    }
+
+    /* Modal dialog styles */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.5);
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .modal-overlay.visible {
+      display: flex;
+    }
+
+    .modal-dialog {
+      background: white;
+      border-radius: 8px;
+      padding: 24px;
+      min-width: 400px;
+      max-width: 500px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+    }
+
+    .modal-dialog h3 {
+      margin: 0 0 16px 0;
+      font-size: 18px;
+      font-weight: 600;
+      color: #333;
+    }
+
+    .modal-dialog .input-group {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .modal-dialog .button-group {
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+    }
+
+    .modal-dialog button {
+      padding: 8px 16px;
+      font-size: 14px;
+    }
+
+    .modal-dialog .cancel-btn {
+      background: #e0e0e0;
+      color: #333;
+    }
+
+    .modal-dialog .cancel-btn:hover {
+      background: #d0d0d0;
+    }
+
+    .modal-dialog .modify-submit-btn {
+      background: #9b7dd4;
+    }
+
+    .modal-dialog .modify-submit-btn:hover {
+      background: #8a6bc3;
+    }
+
+    .modal-dialog .delete-submit-btn {
+      background: #e74c3c;
+    }
+
+    .modal-dialog .delete-submit-btn:hover {
+      background: #c0392b;
     }
 
     .delete-link-btn {
@@ -373,10 +492,37 @@
           </thead>
           <tbody>
             <tr>
-              <td colspan="5" style="text-align: center; padding: 20px; color: #999;">No links found</td>
+              <td colspan="8" style="text-align: center; padding: 20px; color: #999;">No links found</td>
             </tr>
           </tbody>
         </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal dialog for modifying links -->
+  <div id="modifyModal" class="modal-overlay">
+    <div class="modal-dialog">
+      <h3>Modify Link</h3>
+      <div class="input-group visible">
+        <label for="modifyUrlInput">URL</label>
+        <input type="text" id="modifyUrlInput" placeholder="https://figma.com" autocomplete="off">
+      </div>
+      <div class="button-group">
+        <button id="modifyCancelBtn" class="cancel-btn">Cancel</button>
+        <button id="modifySubmitBtn" class="modify-submit-btn">Update Link</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal dialog for deleting links -->
+  <div id="deleteModal" class="modal-overlay">
+    <div class="modal-dialog">
+      <h3>Delete Link</h3>
+      <p style="margin: 0 0 16px 0; color: #666;">Are you sure you want to delete this link? This action cannot be undone.</p>
+      <div class="button-group">
+        <button id="deleteCancelBtn" class="cancel-btn">Cancel</button>
+        <button id="deleteSubmitBtn" class="delete-submit-btn">Delete Link</button>
       </div>
     </div>
   </div>
@@ -392,9 +538,18 @@
       const urlInput = document.getElementById('urlInput');
       const linkBtn = document.getElementById('linkBtn');
       const deleteLinkBtn = document.getElementById('deleteLinkBtn');
+      const modifyModal = document.getElementById('modifyModal');
+      const modifyUrlInput = document.getElementById('modifyUrlInput');
+      const modifyCancelBtn = document.getElementById('modifyCancelBtn');
+      const modifySubmitBtn = document.getElementById('modifySubmitBtn');
+      const deleteModal = document.getElementById('deleteModal');
+      const deleteCancelBtn = document.getElementById('deleteCancelBtn');
+      const deleteSubmitBtn = document.getElementById('deleteSubmitBtn');
       
       // Track current selected node ID for deletion
       let currentSelectedNodeId = null;
+      let currentModifyNodeId = null;
+      let currentDeleteNodeId = null;
 
       // Check initial selection
       parent.postMessage({ pluginMessage: { type: 'validate-object-selection' } }, '*');
@@ -409,8 +564,9 @@
 
       // Handle delete link button click
       deleteLinkBtn.addEventListener('click', () => {
-        if (currentSelectedNodeId && confirm('Are you sure you want to delete this link?')) {
-          parent.postMessage({ pluginMessage: { type: 'delete-link', nodeId: currentSelectedNodeId } }, '*');
+        if (currentSelectedNodeId) {
+          currentDeleteNodeId = currentSelectedNodeId;
+          deleteModal.classList.add('visible');
         }
       });
 
@@ -423,6 +579,67 @@
       urlInput.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {
           handleLinkClick();
+        }
+      });
+
+      // Handle modify modal
+      modifyCancelBtn.addEventListener('click', () => {
+        modifyModal.classList.remove('visible');
+        modifyUrlInput.value = '';
+        currentModifyNodeId = null;
+      });
+
+      modifySubmitBtn.addEventListener('click', () => {
+        const url = modifyUrlInput.value.trim();
+        if (url && currentModifyNodeId) {
+          parent.postMessage({ pluginMessage: { type: 'modify-link', nodeId: currentModifyNodeId, url: url } }, '*');
+          modifyModal.classList.remove('visible');
+          modifyUrlInput.value = '';
+          currentModifyNodeId = null;
+        }
+      });
+
+      // Handle Enter key in modify input
+      modifyUrlInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          modifySubmitBtn.click();
+        } else if (e.key === 'Escape') {
+          modifyCancelBtn.click();
+        }
+      });
+
+      // Close modal when clicking overlay
+      modifyModal.addEventListener('click', (e) => {
+        if (e.target === modifyModal) {
+          modifyCancelBtn.click();
+        }
+      });
+
+      // Handle delete modal
+      deleteCancelBtn.addEventListener('click', () => {
+        deleteModal.classList.remove('visible');
+        currentDeleteNodeId = null;
+      });
+
+      deleteSubmitBtn.addEventListener('click', () => {
+        if (currentDeleteNodeId) {
+          parent.postMessage({ pluginMessage: { type: 'delete-link', nodeId: currentDeleteNodeId } }, '*');
+          deleteModal.classList.remove('visible');
+          currentDeleteNodeId = null;
+        }
+      });
+
+      // Close delete modal when clicking overlay
+      deleteModal.addEventListener('click', (e) => {
+        if (e.target === deleteModal) {
+          deleteCancelBtn.click();
+        }
+      });
+
+      // Handle Escape key for delete modal
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && deleteModal.classList.contains('visible')) {
+          deleteCancelBtn.click();
         }
       });
 
@@ -442,16 +659,17 @@
                 <tr>
                   <th>Page Name</th>
                   <th>Object</th>
-                  <th>Group</th>
-                  <th>Hyperlink Object</th>
+                  <th></th>
+                  <th></th>
                   <th>Link Target</th>
+                  <th></th>
                   <th></th>
                   <th></th>
                 </tr>
               </thead>
               <tbody>
                 <tr>
-                  <td colspan="7" style="text-align: center; padding: 20px; color: #999;">No links found</td>
+                  <td colspan="8" style="text-align: center; padding: 20px; color: #999;">No links found</td>
                 </tr>
               </tbody>
             </table>
@@ -465,9 +683,10 @@
               <tr>
                 <th>Page Name</th>
                 <th>Object</th>
-                <th>Group</th>
-                <th>Hyperlink Object</th>
+                <th></th>
+                <th></th>
                 <th>Link Target</th>
+                <th></th>
                 <th></th>
                 <th></th>
               </tr>
@@ -486,13 +705,16 @@
                       <span class="clickable" data-node-id="${escapeHtml(link.nodeId)}" title="Click to select this object">${escapeHtml(displayName)}</span>
                     </td>
                     <td>
-                      ${groupId ? `<span class="clickable" data-node-id="${escapeHtml(groupId)}" title="Click to select the group">Group</span>` : '-'}
+                      ${groupId ? `<button class="group-btn clickable" data-node-id="${escapeHtml(groupId)}" title="Click to select the group">Group 📦</button>` : '-'}
                     </td>
                     <td>
-                      ${textNodeId ? `<span class="clickable" data-node-id="${escapeHtml(textNodeId)}" title="Click to select the hyperlink text object">Link Object</span>` : '-'}
+                      ${textNodeId ? `<button class="link-object-btn clickable" data-node-id="${escapeHtml(textNodeId)}" title="Click to select the hyperlink text object">Object 🪢</button>` : '-'}
                     </td>
                     <td>
                       <a href="${escapeHtml(displayUrl)}" target="_blank" class="link-url" title="${escapeHtml(displayUrl)}">${escapeHtml(displayUrl)}</a>
+                    </td>
+                    <td>
+                      <button class="modify-btn" data-node-id="${escapeHtml(link.nodeId)}" data-current-url="${escapeHtml(displayUrl)}" title="Modify this link">Modify ✒️</button>
                     </td>
                     <td>
                       <button class="copy-btn" data-url="${escapeHtml(displayUrl)}" title="Copy link to clipboard">Copy 🔗</button>
@@ -567,14 +789,32 @@
           });
         });
 
+        // Add click handlers to modify buttons
+        linksList.querySelectorAll('.modify-btn').forEach(btn => {
+          btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const nodeId = btn.getAttribute('data-node-id');
+            const currentUrl = btn.getAttribute('data-current-url');
+            if (nodeId) {
+              currentModifyNodeId = nodeId;
+              modifyUrlInput.value = currentUrl || '';
+              modifyModal.classList.add('visible');
+              modifyUrlInput.focus();
+              modifyUrlInput.select();
+            }
+          });
+        });
+
         // Add click handlers to delete buttons
         linksList.querySelectorAll('.delete-btn').forEach(btn => {
           btn.addEventListener('click', (e) => {
             e.preventDefault();
             e.stopPropagation();
             const nodeId = btn.getAttribute('data-node-id');
-            if (nodeId && confirm('Are you sure you want to delete this link?')) {
-              parent.postMessage({ pluginMessage: { type: 'delete-link', nodeId: nodeId } }, '*');
+            if (nodeId) {
+              currentDeleteNodeId = nodeId;
+              deleteModal.classList.add('visible');
             }
           });
         });

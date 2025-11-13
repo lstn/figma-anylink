@@ -887,6 +887,73 @@ async function addHyperlink(url) {
   }
 }
 
+// Modify a link: update the URL of an existing link
+async function modifyLink(nodeId, url) {
+  try {
+    const links = await loadLinksFromStorage();
+    const linkData = links[nodeId];
+    
+    if (!linkData) {
+      figma.notify('Link not found in storage');
+      return;
+    }
+    
+    // Validate URL
+    let hyperlinkUrl = url.trim();
+    if (!hyperlinkUrl) {
+      figma.notify('Please enter a valid URL');
+      return;
+    }
+    if (!hyperlinkUrl.match(/^https?:\/\//i)) {
+      hyperlinkUrl = 'https://' + hyperlinkUrl;
+    }
+    
+    // Find the text node by searching through pages
+    let textNode = null;
+    for (const page of figma.root.children) {
+      if (page.type === 'PAGE') {
+        try {
+          await page.loadAsync();
+          if (linkData.textNodeId) {
+            textNode = findNodeById(page, linkData.textNodeId);
+            if (textNode) break;
+          }
+        } catch (e) {
+          // Page might not be accessible, continue to next page
+          continue;
+        }
+      }
+    }
+    
+    if (!textNode) {
+      figma.notify('Link object not found. It may have been deleted.');
+      // Clean up storage
+      await removeLinkFromStorage(nodeId);
+      await refreshLinksList();
+      return;
+    }
+    
+    // Update the hyperlink
+    await updateHyperlink(textNode, hyperlinkUrl);
+    
+    // Find the group (parent of text node)
+    const groupId = textNode.parent && textNode.parent.type === 'GROUP' 
+      ? textNode.parent.id 
+      : null;
+    
+    // Update in storage
+    await saveLinkToStorage(nodeId, linkData.nodeName || 'Unnamed', textNode.id, groupId, hyperlinkUrl);
+    
+    // Refresh the links list
+    await refreshLinksList();
+    
+    figma.notify(`Updated hyperlink for ${linkData.nodeName || 'object'}`);
+  } catch (error) {
+    figma.notify(`Error modifying hyperlink: ${error.message}`);
+    console.error('Error in modifyLink:', error);
+  }
+}
+
 // Delete a link: remove text node, ungroup, and remove from storage
 async function deleteLink(nodeId) {
   try {
@@ -1100,6 +1167,8 @@ figma.ui.onmessage = async (msg) => {
     await refreshLinksList();
   } else if (msg.type === 'select-node') {
     await selectNodeById(msg.nodeId, msg.rightClick || false);
+  } else if (msg.type === 'modify-link') {
+    await modifyLink(msg.nodeId, msg.url);
   } else if (msg.type === 'delete-link') {
     await deleteLink(msg.nodeId);
   }
