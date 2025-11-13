@@ -17,3 +17,6 @@ AnyLink breaks free from Figma's text-only hyperlink limitation, empowering you 
 - **Smart detection** - Automatically detects and tracks existing AnyLink hyperlinks across your document
 - **Undo/redo support** - All link operations are properly integrated with Figma's undo/redo system
 - **Auto-refresh** - Link table automatically updates to stay in sync with your document
+
+
+This plugin is free, OSS, licensed under Apache 2.0 - and will always be free - however, if you'd really like to support me for taking the time to write & maintain this - please consider a (very small) contribution on Ko-fi: https://ko-fi.com/lstn - this is absolutely not necessary but helps fund my more hands-on hobbies :) 
