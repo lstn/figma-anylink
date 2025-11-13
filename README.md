@@ -1,5 +1,7 @@
 # AnyLink
 
+[![Ko-fi](https://img.shields.io/badge/Ko--fi-F16061?style=for-the-badge&logo=ko-fi&logoColor=white)](https://ko-fi.com/lstn)
+
 ## Description
 
 AnyLink breaks free from Figma's text-only hyperlink limitation, empowering you to add clickable links to any object in your designs. Whether it's a frame, rectangle, group, or any other element, AnyLink transforms it into an interactive hotspot with just a few clicks. Perfect for creating interactive prototypes, design systems with linked documentation, or any design where you need objects to be clickable. The plugin intelligently manages your links across pages, making it easy to track and update all your hyperlinks in one centralized view.
