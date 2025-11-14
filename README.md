@@ -1,14 +1,14 @@
-# AnyLink
+# ![Logo](assets/logo/anylink-logo-rounded-64.png) ![AnyLink](assets/logo-text/anylink-logo-text-200.png)
 
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-F16061?style=for-the-badge&logo=ko-fi&logoColor=white)](https://ko-fi.com/lstn)
 
-**Break free from Figma's text-only hyperlink limitation by making ANY object clickable; no text required.**
+**Break free from Figma's text-only link limitation by making ANY object clickable; no text required.**
 
-## Description
+## 📖 Description
 
 AnyLink breaks free from Figma's text-only hyperlink limitation, empowering you to add clickable links to any object in your designs. Whether it's a frame, rectangle, group, or any other element, AnyLink transforms it into an interactive hotspot with just a few clicks. Perfect for creating interactive prototypes, design systems with linked documentation, or any design where you need objects to be clickable. The plugin intelligently manages your links across pages, making it easy to track and update all your hyperlinks in one centralized view.
 
-## Features
+## 🚀 Features
 
 - **Add hyperlinks to any object** - Transform frames, images, rectangles, groups, and more into clickable elements
 - **Centralized link management** - View all AnyLink links in your document in an organized table with page names
@@ -20,6 +20,8 @@ AnyLink breaks free from Figma's text-only hyperlink limitation, empowering you 
 - **Undo/redo support** - All link operations are properly integrated with Figma's undo/redo system
 - **Auto-refresh** - Link table automatically updates to stay in sync with your document
 
-## Disclaimer
+## ⚖️ Disclaimer
 
-This plugin is free, OSS, licensed under Apache 2.0 - and will always be free - however, if you'd really like to support me for taking the time to write & maintain this - please consider a (very small) contribution on Ko-fi: [☕ https://ko-fi.com/lstn](https://ko-fi.com/lstn) - this is absolutely not necessary but helps fund my more hands-on hobbies :) 
+This plugin is free, OSS, licensed under Apache 2.0 - and will always be free - however, if you'd really like to support me for taking the time to write & maintain this - please consider making a (very small) contribution to me on Ko-fi: [☕ https://ko-fi.com/lstn](https://ko-fi.com/lstn) - this is absolutely not necessary but helps fund my more hands-on hobbies :) 
+
+If you prefer contributing code instead, please do!
