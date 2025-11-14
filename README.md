@@ -1,6 +1,6 @@
 # ![Logo](assets/logo/anylink-logo-rounded-64.png) ![AnyLink](assets/logo-text/anylink-logo-text-200.png)
 
-[![Ko-fi](https://img.shields.io/badge/Ko--fi-F16061?style=for-the-badge&logo=ko-fi&logoColor=white)](https://ko-fi.com/lstn)
+[![Figma](https://img.shields.io/badge/figma-%23F24E1E.svg?style=for-the-badge&logo=figma&logoColor=white)](https://www.figma.com/community/plugin/1570973971799031055/anylink) [![Ko-fi](https://img.shields.io/badge/Ko--fi-F16061?style=for-the-badge&logo=ko-fi&logoColor=white)](https://ko-fi.com/lstn)
 
 **Break free from Figma's text-only link limitation by making ANY object clickable; no text required.**
 
